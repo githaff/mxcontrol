@@ -1,9 +1,11 @@
 # This is test libusb project
 
 CFLAGS = -Wall -pedantic
-CFLAGS += `pkg-config --cflags hidapi-hidraw`
-LDFLAGS += `pkg-config --libs hidapi-hidraw`
+CFLAGS += `pkg-config --cflags libusb-1.0`
+LDFLAGS += `pkg-config --libs libusb-1.0`
 
+xusb : xusb.c
+	gcc $(CFLAGS) $(LDFLAGS) -o xusb xusb.c
 
 usb : main.o usb.o aux.o
 	gcc $(LDFLAGS) main.o usb.o aux.o -o usb
