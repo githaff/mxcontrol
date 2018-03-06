@@ -4,17 +4,11 @@ CFLAGS = -Wall -pedantic
 CFLAGS += `pkg-config --cflags hidapi-libusb` -g
 LDFLAGS += `pkg-config --libs hidapi-libusb`
 
-usb : main.o usb.o aux.o
-	gcc $(LDFLAGS) main.o usb.o aux.o -o usb
-
-xusb : xusb.c
-	gcc -Wall -pedantic `pkg-config --cflags --libs libusb-1.0` -o xusb xusb.c
+usb : main.o aux.o
+	gcc $(LDFLAGS) main.o aux.o -o usb
 
 main.o : main.c
 	gcc $(CFLAGS) -c main.c
-
-usb.o : usb.c
-	gcc $(CFLAGS) -c usb.c
 
 aux.o : aux.c
 	gcc $(CFLAGS) -c aux.c
