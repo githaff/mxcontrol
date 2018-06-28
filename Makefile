@@ -7,6 +7,9 @@ LDFLAGS += `pkg-config --libs hidapi-libusb`
 mxcontrol : main.o aux.o
 	gcc $(LDFLAGS) main.o aux.o -o mxcontrol
 
+udev : udev.c aux.c
+	gcc $(CFLAGS) -ludev udev.c aux.c -o udev
+
 main.o : main.c
 	gcc $(CFLAGS) -c main.c
 

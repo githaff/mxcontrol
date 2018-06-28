@@ -34,11 +34,22 @@ void msg(const char *msg, ...)
 	va_end(args);
 }
 
+void warn(const char *msg, ...)
+{
+    va_list args;
+
+    va_start(args, msg);
+    fprintf(stderr, "Warning: ");
+    __msg(stderr, msg, args);
+    va_end(args);
+}
+
 void err(const char *msg, ...)
 {
 	va_list args;
 
 	va_start(args, msg);
+  fprintf(stderr, "Error: ");
 	__msg(stderr, msg, args);
 	va_end(args);
 }
@@ -48,6 +59,7 @@ void crit(const char *msg, ...)
 	va_list args;
 
 	va_start(args, msg);
+  fprintf(stderr, "Critical: ");
 	err(msg, args);
 	va_end(args);
 

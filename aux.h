@@ -7,6 +7,7 @@
 
 void msgn(const char *msg, ...);
 void msg(const char *msg, ...);
+void warn(const char *msg, ...);
 void err(const char *msg, ...);
 void crit(const char *msg, ...);
 
