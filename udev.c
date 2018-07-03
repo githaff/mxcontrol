@@ -108,13 +108,9 @@ bool is_mxm_ps(struct udev_device *dev)
     if (vid != VID || pid != PID)
         goto exit;
 
-    udev_device_unref(dev_usb);
-
     return true;
 
   exit:
-    udev_device_unref(dev_usb);
-
     return false;
 }
 
