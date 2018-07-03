@@ -32,18 +32,18 @@ struct udev_device *find_hidraw(struct udev *udev, struct udev_device *dev_ps)
 
     struct dirent *ent;
     char path_hidraw_full[1024];
-    struct udev_device *dev_hidraw_new;
     while ((ent = readdir(sysfs_dir)) != NULL) {
         if (strstr(ent->d_name, "hidraw") != ent->d_name)
             continue;
 
         sprintf(path_hidraw_full, "%s/%s", path_hidraw, ent->d_name);
 
-        dev_hidraw_new = udev_device_new_from_syspath(udev, path_hidraw_full);
-        if (dev_hidraw && dev_hidraw_new)
-            warn("too many hidraw devices found");
-        dev_hidraw = dev_hidraw_new;
+        dev_hidraw = udev_device_new_from_syspath(udev, path_hidraw_full);
+        if (dev_hidraw)
+            break;
     }
+
+    closedir(sysfs_dir);
 
     return dev_hidraw;
 }
@@ -178,6 +178,8 @@ bool monitor(struct udev *udev)
             udev_device_unref(dev_hidraw);
         }
     }
+
+    udev_monitor_unref(mon);
 
     return true;
 }
