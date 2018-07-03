@@ -5,6 +5,9 @@
 #include <stdio.h>
 
 
+#define ARR_SIZE(x) (sizeof(x) / (sizeof(x[0])))
+
+
 void msgn(const char *msg, ...);
 void msg(const char *msg, ...);
 void warn(const char *msg, ...);

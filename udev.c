@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <dirent.h>
+#include <fcntl.h>
 
 #include "aux.h"
 
@@ -51,7 +52,7 @@ struct udev_device *find_hidraw(struct udev *udev, struct udev_device *dev_ps)
 
 /* Check if the device received from monitor is the expected monitor action
  */
-bool is_expected(struct udev_device *dev)
+bool is_new_device(struct udev_device *dev)
 {
     const char *action;
     action = udev_device_get_action(dev);
@@ -61,6 +62,11 @@ bool is_expected(struct udev_device *dev)
         strcmp(action, "add"))
         return false;
 
+    return true;
+}
+
+bool is_online(struct udev_device *dev)
+{
     const char *online;
     online = udev_device_get_sysattr_value(dev, "online");
     if (!online)
@@ -76,6 +82,7 @@ bool is_expected(struct udev_device *dev)
 bool is_mxm_ps(struct udev_device *dev)
 {
     const char *subsystem = udev_device_get_subsystem(dev);
+
     if (!subsystem || strcmp(subsystem, "power_supply"))
         return false;
 
@@ -111,15 +118,103 @@ bool is_mxm_ps(struct udev_device *dev)
     return false;
 }
 
+bool send_cmd(int fd, uint8_t *cmd_arr, size_t cmd_len)
+{
+    size_t len;
+    const int tries = 5;
+
+    int i;
+    for (i = 0; i < tries; i++) {
+        len = write(fd, cmd_arr, cmd_len);
+        if (len == cmd_len)
+            break;
+        usleep(100 * 1000);
+    }
+    if (i > 0)
+        warn("took %d tries to send command", i);
+
+    return (i < tries);
+}
+
 /* Setup MX Master device
  */
 bool setup_mxm(struct udev_device *dev_hidraw)
 {
     const char *devnode;
+    int fd;
 
     devnode = udev_device_get_devnode(dev_hidraw);
     msg("Performing setup on '%s'", devnode);
-    /* TODO: implement setup */
+
+    fd = open(devnode, O_RDWR);
+    if (fd < 0) {
+        err("can't open hid device");
+        return false;
+    }
+
+    /* Following commands make MX Master produce raw up/down events which later
+     * can be processed by the SW. Making so even for FW/BW buttons which are
+     * already recognized by X as buttons 8 and 9 allows to work around some
+     * mapping issues.
+     */
+    uint8_t cmd_thumb_event[] = {
+        0x11, 0x03, 0x08, 0x3e, 0x00, 0xc3, 0x03, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+    uint8_t cmd_fw_event[] = {
+        0x11, 0x03, 0x08, 0x3e, 0x00, 0x56, 0x03, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+    uint8_t cmd_bk_event[] = {
+        0x11, 0x03, 0x08, 0x3e, 0x00, 0x53, 0x03, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+    /* Following commands set up ratchet shift mode control. Do it with scroll
+     * wheel press instead of middle button. While middle button - simple
+     * middleclick. Also set up ratchet sensitivity.
+     */
+    uint8_t cmd_wheel_modeshift[] = {
+        0x11, 0x03, 0x08, 0x38, 0x00, 0x52, 0x2a, 0x00,
+        0xc4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+    uint8_t cmd_middlebutton_middleclick[] = {
+        0x11, 0x03, 0x08, 0x38, 0x00, 0xc4, 0x2a, 0x00,
+        0x52, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+    /* Note: value of mode shift threshold: min = 0x00, max = 0x32
+     */
+    uint8_t threshold = 0x0d;
+    uint8_t cmd_modeshift_threshold[] = {
+        0x10, 0x03, 0x0b, 0x1f, 0x02, 0x00, 0x00
+    };
+    cmd_modeshift_threshold[5] = threshold;
+    cmd_modeshift_threshold[6] = threshold;
+
+    /* Batch send all commands to MX Master
+     */
+    if (!send_cmd(fd, cmd_thumb_event, ARR_SIZE(cmd_thumb_event)))
+        warn("failed to set up thumb events");
+    if (!send_cmd(fd, cmd_fw_event, ARR_SIZE(cmd_fw_event)))
+        warn("failed to set up forward events");
+    if (!send_cmd(fd, cmd_bk_event, ARR_SIZE(cmd_bk_event)))
+        warn("failed to set up backward events");
+    if (!send_cmd(fd, cmd_wheel_modeshift, ARR_SIZE(cmd_wheel_modeshift)))
+        warn("failed to map scroll wheel to mode shift");
+    if (!send_cmd(fd, cmd_middlebutton_middleclick, ARR_SIZE(cmd_middlebutton_middleclick)))
+        warn("failed to map middle button to middle click");
+    if (!send_cmd(fd, cmd_modeshift_threshold, ARR_SIZE(cmd_modeshift_threshold)))
+        warn("failed to set up mode shift threshold level");
+
+    /* TODO: implement start of the separate thread listening hidraw device for
+     * raw events */
+
+    close(fd);
+
 
     return true;
 }
@@ -155,8 +250,15 @@ bool monitor(struct udev *udev)
             struct udev_device *dev_mon;
 
             dev_mon = udev_monitor_receive_device(mon);
+            if (!dev_mon)
+                continue;
 
-            if (!is_expected(dev_mon)) {
+            if (!is_new_device(dev_mon)) {
+                udev_device_unref(dev_mon);
+                continue;
+            }
+
+            if (!is_online(dev_mon)) {
                 udev_device_unref(dev_mon);
                 continue;
             }
@@ -186,11 +288,11 @@ bool monitor(struct udev *udev)
 
 /* Scan for all present MX Master devices
  */
-bool scan_for_mxm(struct udev *udev)
+struct udev_device *scan_for_mxm(struct udev *udev)
 {
     struct udev_enumerate *enumerate;
     struct udev_list_entry *devices, *dev_list_entry;
-    bool found = false;
+    struct udev_device *dev_hidraw = NULL;
 
     enumerate = udev_enumerate_new(udev);
     udev_enumerate_add_match_subsystem(enumerate, "power_supply");
@@ -204,32 +306,29 @@ bool scan_for_mxm(struct udev *udev)
         path = udev_list_entry_get_name(dev_list_entry);
         dev_ps = udev_device_new_from_syspath(udev, path);
 
+        if (!is_online(dev_ps)) {
+            udev_device_unref(dev_ps);
+            continue;
+        }
+
         if (!is_mxm_ps(dev_ps)) {
             udev_device_unref(dev_ps);
             continue;
         }
 
-        struct udev_device *dev_hidraw;
         dev_hidraw = find_hidraw(udev, dev_ps);
         if (!dev_hidraw) {
             udev_device_unref(dev_ps);
             continue;
         }
 
-        found = true;
-        msg("DEVICE FOUND:");
-        msg("* subsystem: %s", udev_device_get_subsystem(dev_hidraw));
-        msg("* syspath: %s", udev_device_get_syspath(dev_hidraw));
-        msg("* sysname: %s", udev_device_get_sysname(dev_hidraw));
-        msg("* devnode: %s", udev_device_get_devnode(dev_hidraw));
-
-        udev_device_unref(dev_hidraw);
         udev_device_unref(dev_ps);
+        break;
     }
     /* Free the enumerator object */
     udev_enumerate_unref(enumerate);
 
-    return found;
+    return dev_hidraw;
 }
 
 /* TODO: memory leakage analyze */
@@ -237,6 +336,7 @@ bool scan_for_mxm(struct udev *udev)
 int main (void)
 {
     struct udev *udev;
+    struct udev_device *dev_hidraw;
 
     /* Create the udev object */
     udev = udev_new();
@@ -244,6 +344,10 @@ int main (void)
         err("can't create udev");
         exit(1);
     }
+
+    dev_hidraw = scan_for_mxm(udev);
+    if (dev_hidraw)
+        setup_mxm(dev_hidraw);
 
     monitor(udev);
 
