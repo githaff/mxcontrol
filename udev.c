@@ -118,7 +118,7 @@ bool setup_mxm(struct udev_device *dev_hidraw)
     const char *devnode;
 
     devnode = udev_device_get_devnode(dev_hidraw);
-    printf("Performing setup on '%s'\n", devnode);
+    msg("Performing setup on '%s'", devnode);
     /* TODO: implement setup */
 
     return true;
@@ -135,14 +135,14 @@ bool monitor(struct udev *udev)
 
     mon = udev_monitor_new_from_netlink(udev, "udev");
     if (!mon) {
-        printf("Error: failed to create udev monitor\n");
+        err("failed to create udev monitor");
         return false;
     }
     udev_monitor_filter_add_match_subsystem_devtype(mon, "power_supply", NULL);
     udev_monitor_enable_receiving(mon);
     fd_mon = udev_monitor_get_fd(mon);
 
-    printf("Entering monitor loop...\n");
+    msg("Entering monitor loop...");
     while (1) {
         fd_set fds;
         int ret;
@@ -195,8 +195,7 @@ bool scan_for_mxm(struct udev *udev)
     udev_enumerate_scan_devices(enumerate);
     devices = udev_enumerate_get_list_entry(enumerate);
 
-    printf("Scanning current MX Master devices...\n");
-
+    msg("Scanning current MX Master devices...");
     udev_list_entry_foreach(dev_list_entry, devices) {
         const char *path;
         struct udev_device *dev_ps;
@@ -211,17 +210,16 @@ bool scan_for_mxm(struct udev *udev)
         struct udev_device *dev_hidraw;
         dev_hidraw = find_hidraw(udev, dev_ps);
         if (!dev_hidraw) {
-            warn("failed to find find hidraw device");
             udev_device_unref(dev_ps);
             continue;
         }
 
         found = true;
-        printf("DEVICE FOUND:\n");
-        printf("* subsystem: %s\n", udev_device_get_subsystem(dev_hidraw));
-        printf("* syspath: %s\n", udev_device_get_syspath(dev_hidraw));
-        printf("* sysname: %s\n", udev_device_get_sysname(dev_hidraw));
-        printf("* devnode: %s\n", udev_device_get_devnode(dev_hidraw));
+        msg("DEVICE FOUND:");
+        msg("* subsystem: %s", udev_device_get_subsystem(dev_hidraw));
+        msg("* syspath: %s", udev_device_get_syspath(dev_hidraw));
+        msg("* sysname: %s", udev_device_get_sysname(dev_hidraw));
+        msg("* devnode: %s", udev_device_get_devnode(dev_hidraw));
 
         udev_device_unref(dev_hidraw);
         udev_device_unref(dev_ps);
@@ -241,14 +239,11 @@ int main (void)
     /* Create the udev object */
     udev = udev_new();
     if (!udev) {
-        printf("Can't create udev\n");
+        err("can't create udev");
         exit(1);
     }
 
     monitor(udev);
-
-    printf("Scanning complete...\n");
-
 
     udev_unref(udev);
 
