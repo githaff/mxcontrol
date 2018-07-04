@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 
+#define UNUSED(x) ((void)(x))
 #define ARR_SIZE(x) (sizeof(x) / (sizeof(x[0])))
 
 

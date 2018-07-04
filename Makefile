@@ -1,7 +1,7 @@
 # This is test libusb project
 
-CFLAGS = -Wall -pedantic
-CFLAGS += `pkg-config --cflags hidapi-libusb` -g
+CFLAGS = -Wall -pedantic -g
+CFLAGS += `pkg-config --cflags hidapi-libusb` -pthread
 LDFLAGS += `pkg-config --libs hidapi-libusb`
 
 mxcontrol : main.o aux.o

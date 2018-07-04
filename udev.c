@@ -8,12 +8,24 @@
 #include <stdbool.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <assert.h>
+#include <pthread.h>
+#include <signal.h>
 
 #include "aux.h"
 
 
 #define VID 0x046d
 #define PID 0xc52b
+
+
+struct hid_event_loop {
+    pthread_t thread;
+    int fd;
+    bool stop;
+    bool is_running;
+} el;
 
 
 /* Find hidraw device related to power_supply device
@@ -48,7 +60,6 @@ struct udev_device *find_hidraw(struct udev *udev, struct udev_device *dev_ps)
 
     return dev_hidraw;
 }
-
 
 /* Check if the device received from monitor is the expected monitor action
  */
@@ -132,6 +143,91 @@ bool send_cmd(int fd, uint8_t *cmd_arr, size_t cmd_len)
     return (i < tries);
 }
 
+void *event_loop(void *arg)
+{
+    uint8_t buf[256];
+    ssize_t len;
+
+    UNUSED(arg);
+
+    if (el.fd < 0) {
+        err("failed to start event loop. Device node file is not open");
+        return NULL;
+    }
+
+    el.is_running = true;
+    el.stop = false;
+
+    /* Expected interrupt from button press events */
+    unsigned char int_fw_down[] = {
+        0x11, 0x03, 0x08, 0x00, 0x00, 0x56, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00 };
+    unsigned char int_bk_down[] = {
+        0x11, 0x03, 0x08, 0x00, 0x00, 0x53, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00 };
+    unsigned char int_thumb_down[] = {
+        0x11, 0x03, 0x08, 0x00, 0x00, 0xc3, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00 };
+    unsigned char int_all_up[] = {
+        0x11, 0x03, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00 };
+
+    while (!el.stop) {
+        len = read(el.fd, buf, ARR_SIZE(buf));
+        if (len < 0) {
+            if (errno == EINTR)
+                break;
+            warn("can't read HID message: %s", strerror(errno));
+            break;
+        }
+
+        if (!memcmp(buf, int_thumb_down, ARR_SIZE(int_thumb_down))) {
+            msg("THUMB");
+        } else if (!memcmp(buf, int_fw_down, ARR_SIZE(int_fw_down))) {
+            msg("FW");
+        } else if (!memcmp(buf, int_bk_down, ARR_SIZE(int_fw_down))) {
+            msg("BK");
+        } else if (!memcmp(buf, int_all_up, ARR_SIZE(int_all_up))) {
+            msg("UP");
+        } else {
+            msgn("[%2d]: ", len);
+            int i;
+            for (i = 0; i < len - 1; i++)
+                msgn("0x%02x ", buf[i]);
+            if (len > 0)
+                msg("0x%02x", buf[i]);
+        }
+    }
+
+    close(el.fd);
+    el.fd = -1;
+
+    msg("Event loop shut down complete");
+    el.is_running = false;
+
+    return NULL;
+}
+
+void event_loop_start()
+{
+    msg("Starting event loop...");
+    pthread_create(&el.thread, NULL, &event_loop, NULL);
+}
+
+void event_loop_shutdown()
+{
+    msg("Killing event loop...");
+    el.stop = true;
+    if (el.is_running) {
+        pthread_kill(el.thread, SIGUSR1);
+        pthread_join(el.thread, NULL);
+    }
+}
+
 /* Setup MX Master device
  */
 bool setup_mxm(struct udev_device *dev_hidraw)
@@ -142,11 +238,17 @@ bool setup_mxm(struct udev_device *dev_hidraw)
     devnode = udev_device_get_devnode(dev_hidraw);
     msg("Performing setup on '%s'", devnode);
 
+    if (el.is_running) {
+        msg("Killing existing event loop");
+        event_loop_shutdown();
+    }
+
     fd = open(devnode, O_RDWR);
     if (fd < 0) {
         err("can't open hid device");
         return false;
     }
+    el.fd = fd;
 
     /* Following commands make MX Master produce raw up/down events which later
      * can be processed by the SW. Making so even for FW/BW buttons which are
@@ -206,11 +308,7 @@ bool setup_mxm(struct udev_device *dev_hidraw)
     if (!send_cmd(fd, cmd_modeshift_threshold, ARR_SIZE(cmd_modeshift_threshold)))
         warn("failed to set up mode shift threshold level");
 
-    /* TODO: implement start of the separate thread listening hidraw device for
-     * raw events */
-
-    close(fd);
-
+    event_loop_start();
 
     return true;
 }
@@ -233,13 +331,20 @@ bool monitor(struct udev *udev)
     udev_monitor_enable_receiving(mon);
     fd_mon = udev_monitor_get_fd(mon);
 
-    msg("Entering monitor loop...");
+    msg("Entering udev monitor loop...");
     while (1) {
         fd_set fds;
         int ret;
         FD_ZERO(&fds);
         FD_SET(fd_mon, &fds);
         ret = select(fd_mon + 1, &fds, NULL, NULL, NULL);
+        if (ret < 0) {
+            if (errno == EINTR) {
+                event_loop_shutdown();
+                break;
+            }
+            warn("select() failed with error: %s", strerror(errno));
+        }
 
         if (ret > 0 && FD_ISSET(fd_mon, &fds)) {
             struct udev_device *dev_hidraw;
@@ -329,10 +434,32 @@ struct udev_device *scan_for_mxm(struct udev *udev)
 
 /* TODO: memory leakage analyze */
 
+void sig_handler(int signum)
+{
+    if (signum == SIGINT) {
+        msg("Shutting down...");
+    }
+}
+
 int main (void)
 {
     struct udev *udev;
     struct udev_device *dev_hidraw;
+
+    /* Signals:
+     * INT  - properly terminate application
+     * USR1 - empty handler. Used to terminate blocking read() in the event loop
+     * thread
+     */
+    struct sigaction sa = { .sa_handler = sig_handler };
+    if (sigaction(SIGINT, &sa, NULL)) {
+        err("failed to register SIGINT handler: %s", strerror(errno));
+        return 1;
+    }
+    if (sigaction(SIGUSR1, &sa, NULL)) {
+        err("failed to register SIGUSR1 handler: %s", strerror(errno));
+        return 1;
+    }
 
     /* Create the udev object */
     udev = udev_new();
