@@ -2,13 +2,10 @@
 
 CFLAGS = -Wall -pedantic -g
 CFLAGS += `pkg-config --cflags hidapi-libusb` -pthread
-LDFLAGS += `pkg-config --libs hidapi-libusb`
+LDFLAGS += `pkg-config --libs hidapi-libusb` `pkg-config --libs libudev`
 
 mxcontrol : main.o aux.o
-	gcc $(LDFLAGS) main.o aux.o -o mxcontrol
-
-udev : udev.c aux.c
-	gcc $(CFLAGS) -ludev udev.c aux.c -o udev
+	gcc $(CFLAGS) $(LDFLAGS) main.o aux.o -o mxcontrol
 
 main.o : main.c
 	gcc $(CFLAGS) -c main.c

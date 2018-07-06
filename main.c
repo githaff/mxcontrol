@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <signal.h>
+#include <argp.h>
 
 #include "aux.h"
 
@@ -19,13 +20,76 @@
 #define VID 0x046d
 #define PID 0xc52b
 
+#define X_BUTTON_FW_DOWN "xdotool keydown Hyper_L mousedown 1 keyup Hyper_L"
+#define X_CLEAR "xdotool keyup Hyper_L mouseup 1 mouseup 3"
 
 struct hid_event_loop {
     pthread_t thread;
     int fd;
     bool stop;
     bool is_running;
+
+    int modeshift;
+
+    /* Command actions */
+    const char *act_fw_down;
+    const char *act_bk_down;
+    const char *act_thumb_down;
+    const char *act_all_up;
 } el;
+
+static char doc[] =
+    "This tool implements some custom control logic for the MX Master mouse";
+
+enum cmd_args {
+    MODESHIFT,
+    FW_DOWN,
+    BK_DOWN,
+    THUMB_DOWN,
+    ALL_UP,
+};
+static struct argp_option options[] = {
+    { "modeshift", MODESHIFT, "level", 0, "Level of the mode shift trigger. Min=0, max=50, default=13", 0 },
+    { "fw-down", FW_DOWN, "command", 0, "Command to be executed on the fw button press", 0 },
+    { "bk-down", BK_DOWN, "command", 0, "Command to be executed on the bk button press", 0 },
+    { "thumb-down", THUMB_DOWN, "command", 0, "Command to be executed on the thumb button press", 0 },
+    { "all-up", ALL_UP, "command", 0, "Command to be executed on the thumb button release", 0 },
+    { 0 }
+};
+
+static error_t parse_opt (int key, char *arg, struct argp_state *state)
+{
+    char *endptr;
+
+    switch (key) {
+    case MODESHIFT:
+        el.modeshift = 13;
+        el.modeshift = strtol(arg, &endptr, 10);
+        if (*endptr || el.modeshift > 50 || el.modeshift < 0) {
+            argp_usage(state);
+            return EINVAL;
+        }
+        break;
+    case FW_DOWN:
+        el.act_fw_down = arg;
+        break;
+    case BK_DOWN:
+        el.act_bk_down = arg;
+        break;
+    case THUMB_DOWN:
+        el.act_thumb_down = arg;
+        break;
+    case ALL_UP:
+        el.act_all_up = arg;
+        break;
+    default:
+        return ARGP_ERR_UNKNOWN;
+    }
+
+    return 0;
+}
+
+static struct argp argp = { options, parse_opt, NULL, doc };
 
 
 /* Find hidraw device related to power_supply device
@@ -185,28 +249,19 @@ void *event_loop(void *arg)
             break;
         }
 
-        if (!memcmp(buf, int_thumb_down, ARR_SIZE(int_thumb_down))) {
-            msg("THUMB");
-        } else if (!memcmp(buf, int_fw_down, ARR_SIZE(int_fw_down))) {
-            msg("FW");
-        } else if (!memcmp(buf, int_bk_down, ARR_SIZE(int_fw_down))) {
-            msg("BK");
-        } else if (!memcmp(buf, int_all_up, ARR_SIZE(int_all_up))) {
-            msg("UP");
-        } else {
-            msgn("[%2d]: ", len);
-            int i;
-            for (i = 0; i < len - 1; i++)
-                msgn("0x%02x ", buf[i]);
-            if (len > 0)
-                msg("0x%02x", buf[i]);
-        }
+        if (!memcmp(buf, int_thumb_down, ARR_SIZE(int_thumb_down)) && el.act_thumb_down)
+            system(el.act_thumb_down);
+        else if (!memcmp(buf, int_fw_down, ARR_SIZE(int_fw_down)) && el.act_fw_down)
+            system(el.act_fw_down);
+        else if (!memcmp(buf, int_bk_down, ARR_SIZE(int_bk_down)) && el.act_bk_down)
+            system(el.act_bk_down);
+        else if (!memcmp(buf, int_all_up, ARR_SIZE(int_all_up)) && el.act_all_up)
+            system(el.act_all_up);
     }
 
     close(el.fd);
     el.fd = -1;
 
-    msg("Event loop shut down complete");
     el.is_running = false;
 
     return NULL;
@@ -214,13 +269,11 @@ void *event_loop(void *arg)
 
 void event_loop_start()
 {
-    msg("Starting event loop...");
     pthread_create(&el.thread, NULL, &event_loop, NULL);
 }
 
 void event_loop_shutdown()
 {
-    msg("Killing event loop...");
     el.stop = true;
     if (el.is_running) {
         pthread_kill(el.thread, SIGUSR1);
@@ -238,10 +291,8 @@ bool setup_mxm(struct udev_device *dev_hidraw)
     devnode = udev_device_get_devnode(dev_hidraw);
     msg("Performing setup on '%s'", devnode);
 
-    if (el.is_running) {
-        msg("Killing existing event loop");
+    if (el.is_running)
         event_loop_shutdown();
-    }
 
     fd = open(devnode, O_RDWR);
     if (fd < 0) {
@@ -286,12 +337,11 @@ bool setup_mxm(struct udev_device *dev_hidraw)
     };
     /* Note: value of mode shift threshold: min = 0x00, max = 0x32
      */
-    uint8_t threshold = 0x0d;
     uint8_t cmd_modeshift_threshold[] = {
         0x10, 0x03, 0x0b, 0x1f, 0x02, 0x00, 0x00
     };
-    cmd_modeshift_threshold[5] = threshold;
-    cmd_modeshift_threshold[6] = threshold;
+    cmd_modeshift_threshold[5] = el.modeshift;
+    cmd_modeshift_threshold[6] = el.modeshift;
 
     /* Batch send all commands to MX Master
      */
@@ -441,10 +491,24 @@ void sig_handler(int signum)
     }
 }
 
-int main (void)
+/* Parse command line arguments
+ */
+int parse_args(int argc, char **argv)
+{
+    int ret;
+
+    ret = argp_parse(&argp, argc, argv, 0, NULL, &el);
+
+    return ret;
+}
+
+int main (int argc, char *argv[])
 {
     struct udev *udev;
     struct udev_device *dev_hidraw;
+
+    if (parse_args(argc, argv))
+        return 1;
 
     /* Signals:
      * INT  - properly terminate application
