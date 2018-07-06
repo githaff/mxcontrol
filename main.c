@@ -1,5 +1,3 @@
-/* TODO: analyze return from hidraw device during setting up to ensure that all commands are accepted */
-/* TODO: memory leakage analyze */
 /* TODO: create systemd file */
 
 #include <libudev.h>
@@ -197,12 +195,19 @@ bool send_cmd(int fd, uint8_t *cmd_arr, size_t cmd_len)
 {
     size_t len;
     const int tries = 5;
+    uint8_t cmd_resp[64];
 
     int i;
     for (i = 0; i < tries; i++) {
         len = write(fd, cmd_arr, cmd_len);
         if (len == cmd_len)
             break;
+        len = read(fd, cmd_resp, len);
+        if (len == cmd_len)
+            break;
+        if (!memcmp(cmd_arr, cmd_resp, 5))
+            break;
+
         usleep(100 * 1000);
     }
     if (i > 0)
@@ -287,7 +292,7 @@ void event_loop_shutdown()
 
 /* Setup MX Master device
  */
-bool setup_mxm(struct udev_device *dev_hidraw)
+int setup_mxm(struct udev_device *dev_hidraw)
 {
     const char *devnode;
     int fd;
@@ -301,7 +306,7 @@ bool setup_mxm(struct udev_device *dev_hidraw)
     fd = open(devnode, O_RDWR);
     if (fd < 0) {
         err("can't open hid device");
-        return false;
+        return 1;
     }
     el.fd = fd;
 
@@ -364,7 +369,7 @@ bool setup_mxm(struct udev_device *dev_hidraw)
 
     event_loop_start();
 
-    return true;
+    return 0;
 }
 
 /* Monitor loop over udev events. Run MX Master setup each time MX Master needs
@@ -540,6 +545,7 @@ int main (int argc, char *argv[])
 
     monitor(udev);
 
+    udev_device_unref(dev_hidraw);
     udev_unref(udev);
 
     return 0;
