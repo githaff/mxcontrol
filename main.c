@@ -1,3 +1,7 @@
+/* TODO: analyze return from hidraw device during setting up to ensure that all commands are accepted */
+/* TODO: memory leakage analyze */
+/* TODO: create systemd file */
+
 #include <libudev.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -481,8 +485,6 @@ struct udev_device *scan_for_mxm(struct udev *udev)
 
     return dev_hidraw;
 }
-
-/* TODO: memory leakage analyze */
 
 void sig_handler(int signum)
 {
