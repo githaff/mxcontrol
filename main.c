@@ -289,19 +289,19 @@ void *event_loop(void *arg)
             dbg_next(" %02x", buf[i]);
         dbg_end("");
 
-        if (!memcmp(buf, int_thumb_down, ARR_SIZE(int_thumb_down)) && el.act_thumb_down) {
+        if (!memcmp(buf, int_thumb_down, MIN(len, (ssize_t)ARR_SIZE(int_thumb_down))) && el.act_thumb_down) {
             dbg("CMD: thumb down - start");
             system(el.act_thumb_down);
             dbg("CMD: thumb down - end");
-        } else if (!memcmp(buf, int_fw_down, ARR_SIZE(int_fw_down)) && el.act_fw_down) {
+        } else if (!memcmp(buf, int_fw_down, MIN(len, (ssize_t)ARR_SIZE(int_fw_down))) && el.act_fw_down) {
             dbg("CMD: fw down - start");
             system(el.act_fw_down);
             dbg("CMD: fw down - end");
-        } else if (!memcmp(buf, int_bk_down, ARR_SIZE(int_bk_down)) && el.act_bk_down) {
+        } else if (!memcmp(buf, int_bk_down, MIN(len, (ssize_t)ARR_SIZE(int_bk_down))) && el.act_bk_down) {
             dbg("CMD: bk down - start");
             system(el.act_bk_down);
             dbg("CMD: bk down - end");
-        } else if (!memcmp(buf, int_all_up, ARR_SIZE(int_all_up)) && el.act_all_up) {
+        } else if (!memcmp(buf, int_all_up, MIN(len, (ssize_t)ARR_SIZE(int_all_up))) && el.act_all_up) {
             dbg("CMD: all up - start");
             system(el.act_all_up);
             dbg("CMD: all up - end");
@@ -328,6 +328,7 @@ void event_loop_start()
 void event_loop_shutdown()
 {
     dbg("shutting down event loop");
+    el.stop = true;
     if (el.is_running) {
         dbg("killing existing event loop thread");
         pthread_kill(el.thread, SIGUSR1);

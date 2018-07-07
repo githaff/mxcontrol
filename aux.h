@@ -7,6 +7,8 @@
 
 #define UNUSED(x) ((void)(x))
 #define ARR_SIZE(x) (sizeof(x) / (sizeof(x[0])))
+#define MIN(x, y) (x > y ? y : x)
+#define MAX(x, y) (x > y ? x : y)
 
 #ifdef DEBUG
 void dbg(const char *msg, ...);
