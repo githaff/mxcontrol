@@ -1,4 +1,6 @@
+/* TODO: debug crash with gdb */
 /* TODO: create systemd file */
+/* TODO: remove debug compile options from makefile */
 
 #include <libudev.h>
 #include <stdio.h>
@@ -91,7 +93,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
     return 0;
 }
 
-static struct argp argp = { options, parse_opt, NULL, doc };
+static struct argp argp = { options, parse_opt, NULL, doc, NULL, NULL, NULL };
 
 
 /* Find hidraw device related to power_supply device
@@ -196,17 +198,34 @@ bool send_cmd(int fd, uint8_t *cmd_arr, size_t cmd_len)
     size_t len;
     const int tries = 5;
     uint8_t cmd_resp[64];
+    const int cmp_bytes = 5;    /* first cmd_bytes of command and response should match */
+
+    dbg_start("WRITE[%2d]:", cmd_len);
+    for (unsigned i = 0; i < cmd_len; i++) {
+        dbg_next(" %02x", cmd_arr[i]);
+    }
+    dbg_end("");
 
     int i;
     for (i = 0; i < tries; i++) {
         len = write(fd, cmd_arr, cmd_len);
-        if (len == cmd_len)
-            break;
+        if (len != cmd_len) {
+            dbg("%d bytes written instead of %d. Retrying", len, cmd_len);
+            continue;
+        }
         len = read(fd, cmd_resp, len);
-        if (len == cmd_len)
+        dbg_start("READ[%2d]: ", len);
+        for (unsigned i = 0; i < len; i++)
+            dbg_next(" %02x", cmd_resp[i]);
+        dbg_end(" (response)");
+        if (len != cmd_len) {
+            dbg("%d bytes read instead of %d. Retrying", len, cmd_len);
+            continue;
+        }
+        if (!memcmp(cmd_arr, cmd_resp, cmp_bytes)) {
+            dbg("first %d response mismatch the command", cmp_bytes);
             break;
-        if (!memcmp(cmd_arr, cmd_resp, 5))
-            break;
+        }
 
         usleep(100 * 1000);
     }
@@ -220,6 +239,8 @@ void *event_loop(void *arg)
 {
     uint8_t buf[256];
     ssize_t len;
+
+    dbg("event loop thread started");
 
     UNUSED(arg);
 
@@ -249,44 +270,67 @@ void *event_loop(void *arg)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00 };
 
+    dbg("entering event loop");
     while (!el.stop) {
         len = read(el.fd, buf, ARR_SIZE(buf));
         if (len < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR) {
+                dbg("caught interrupt. Leaving event loop");
                 break;
+            }
             warn("can't read HID message: %s", strerror(errno));
             break;
         }
+        dbg_start("READ[%2d]: ", len);
+        for (int i = 0; i < len; i++)
+            dbg_next(" %02x", buf[i]);
+        dbg_end("");
 
-        if (!memcmp(buf, int_thumb_down, ARR_SIZE(int_thumb_down)) && el.act_thumb_down)
+        if (!memcmp(buf, int_thumb_down, ARR_SIZE(int_thumb_down)) && el.act_thumb_down) {
+            dbg("CMD: thumb down - start");
             system(el.act_thumb_down);
-        else if (!memcmp(buf, int_fw_down, ARR_SIZE(int_fw_down)) && el.act_fw_down)
+            dbg("CMD: thumb down - end");
+        } else if (!memcmp(buf, int_fw_down, ARR_SIZE(int_fw_down)) && el.act_fw_down) {
+            dbg("CMD: fw down - start");
             system(el.act_fw_down);
-        else if (!memcmp(buf, int_bk_down, ARR_SIZE(int_bk_down)) && el.act_bk_down)
+            dbg("CMD: fw down - end");
+        } else if (!memcmp(buf, int_bk_down, ARR_SIZE(int_bk_down)) && el.act_bk_down) {
+            dbg("CMD: bk down - start");
             system(el.act_bk_down);
-        else if (!memcmp(buf, int_all_up, ARR_SIZE(int_all_up)) && el.act_all_up)
+            dbg("CMD: bk down - end");
+        } else if (!memcmp(buf, int_all_up, ARR_SIZE(int_all_up)) && el.act_all_up) {
+            dbg("CMD: all up - start");
             system(el.act_all_up);
+            dbg("CMD: all up - end");
+        }
     }
+    dbg("leaving event loop");
 
     close(el.fd);
     el.fd = -1;
 
     el.is_running = false;
 
+    dbg("event loop shut down");
+
     return NULL;
 }
 
 void event_loop_start()
 {
+    dbg("starting event loop thread");
     pthread_create(&el.thread, NULL, &event_loop, NULL);
 }
 
 void event_loop_shutdown()
 {
+    dbg("shutting down event loop");
     el.stop = true;
     if (el.is_running) {
+        dbg("killing existing event loop thread");
         pthread_kill(el.thread, SIGUSR1);
         pthread_join(el.thread, NULL);
+        dbg("thread killed");
     }
 }
 
@@ -381,6 +425,8 @@ bool monitor(struct udev *udev)
    	struct udev_monitor *mon;
     int fd_mon;
 
+    dbg("starting udev monitor");
+
     mon = udev_monitor_new_from_netlink(udev, "udev");
     if (!mon) {
         err("failed to create udev monitor");
@@ -390,7 +436,7 @@ bool monitor(struct udev *udev)
     udev_monitor_enable_receiving(mon);
     fd_mon = udev_monitor_get_fd(mon);
 
-    msg("Entering udev monitor loop...");
+    dbg("entering udev monitor loop");
     while (1) {
         fd_set fds;
         int ret;
@@ -443,6 +489,8 @@ bool monitor(struct udev *udev)
 
     udev_monitor_unref(mon);
 
+    dbg("event loop successfully shut down");
+
     return true;
 }
 
@@ -459,7 +507,6 @@ struct udev_device *scan_for_mxm(struct udev *udev)
     udev_enumerate_scan_devices(enumerate);
     devices = udev_enumerate_get_list_entry(enumerate);
 
-    msg("Scanning current MX Master devices...");
     udev_list_entry_foreach(dev_list_entry, devices) {
         const char *path;
         struct udev_device *dev_ps;
@@ -493,6 +540,8 @@ struct udev_device *scan_for_mxm(struct udev *udev)
 
 void sig_handler(int signum)
 {
+    dbg("signal %s catched", signum);
+
     if (signum == SIGINT) {
         msg("Shutting down...");
     }
@@ -504,6 +553,7 @@ int parse_args(int argc, char **argv)
 {
     int ret;
 
+    dbg("parsing arguments");
     ret = argp_parse(&argp, argc, argv, 0, NULL, &el);
 
     return ret;
@@ -514,8 +564,22 @@ int main (int argc, char *argv[])
     struct udev *udev;
     struct udev_device *dev_hidraw;
 
+    msg("Starting MX Control with:");
+
+    dbg_start("something new (x)");
+    dbg_next("[1]");
+    dbg_next("[2]");
+    dbg_end("");
+
     if (parse_args(argc, argv))
         return 1;
+
+    msg("Running with parameters:");
+    msg("  fw-down: %s", el.act_fw_down);
+    msg("  bk-down: %s", el.act_bk_down);
+    msg("  thumb-down: %s", el.act_thumb_down);
+    msg("  all-up: %s", el.act_all_up);
+    msg("  modeshift %d", el.modeshift);
 
     /* Signals:
      * INT  - properly terminate application
@@ -539,14 +603,23 @@ int main (int argc, char *argv[])
         exit(1);
     }
 
+    dbg("udev initialized");
+    dbg("scanning for already connected MX Master device");
+
     dev_hidraw = scan_for_mxm(udev);
-    if (dev_hidraw)
+    if (dev_hidraw) {
+        dbg_end("device found");
         setup_mxm(dev_hidraw);
+    } else
+        dbg_end("no device found");
 
     monitor(udev);
 
+    dbg("cleaning up");
     udev_device_unref(dev_hidraw);
     udev_unref(udev);
+
+    dbg("exited");
 
     return 0;
 }

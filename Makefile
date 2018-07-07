@@ -1,6 +1,6 @@
 # This is test libusb project
 
-CFLAGS = -Wall -pedantic -g
+CFLAGS = -Wall -pedantic -g -DDEBUG
 CFLAGS += `pkg-config --cflags hidapi-libusb` -pthread
 LDFLAGS += `pkg-config --libs hidapi-libusb` `pkg-config --libs libudev`
 

@@ -34,6 +34,44 @@ void msg(const char *msg, ...)
 	va_end(args);
 }
 
+#ifdef DEBUG
+void dbg(const char *msg, ...)
+{
+	va_list args;
+
+	va_start(args, msg);
+    msgn("Debug: ");
+	_msg(stdout, msg, args);
+	va_end(args);
+}
+void dbg_start(const char *msg, ...)
+{
+	va_list args;
+
+	va_start(args, msg);
+    msgn("Debug: ");
+	_msgn(stdout, msg, args);
+	va_end(args);
+}
+void dbg_next(const char *msg, ...)
+{
+	va_list args;
+
+	va_start(args, msg);
+	_msgn(stdout, msg, args);
+	va_end(args);
+}
+void dbg_end(const char *msg, ...)
+{
+	va_list args;
+
+	va_start(args, msg);
+	_msg(stdout, msg, args);
+	va_end(args);
+}
+#endif // DEBUG
+
+
 void warn(const char *msg, ...)
 {
     va_list args;
