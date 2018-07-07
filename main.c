@@ -1,4 +1,3 @@
-/* TODO: debug crash with gdb */
 /* TODO: create systemd file */
 /* TODO: remove debug compile options from makefile */
 
@@ -198,7 +197,8 @@ bool send_cmd(int fd, uint8_t *cmd_arr, size_t cmd_len)
     size_t len;
     const int tries = 5;
     uint8_t cmd_resp[64];
-    const int cmp_bytes = 5;    /* first cmd_bytes of command and response should match */
+    const int cmp_offs  = 1;    /* number of first byte to compare in response */
+    const int cmp_bytes = 4;    /* first cmd_bytes of command and response should match */
 
     dbg_start("WRITE[%2d]:", cmd_len);
     for (unsigned i = 0; i < cmd_len; i++) {
@@ -211,7 +211,7 @@ bool send_cmd(int fd, uint8_t *cmd_arr, size_t cmd_len)
         len = write(fd, cmd_arr, cmd_len);
         if (len != cmd_len) {
             dbg("%d bytes written instead of %d. Retrying", len, cmd_len);
-            continue;
+            goto next;
         }
         len = read(fd, cmd_resp, len);
         dbg_start("READ[%2d]: ", len);
@@ -220,13 +220,16 @@ bool send_cmd(int fd, uint8_t *cmd_arr, size_t cmd_len)
         dbg_end(" (response)");
         if (len != cmd_len) {
             dbg("%d bytes read instead of %d. Retrying", len, cmd_len);
-            continue;
+            goto next;
         }
-        if (!memcmp(cmd_arr, cmd_resp, cmp_bytes)) {
-            dbg("first %d response mismatch the command", cmp_bytes);
-            break;
+        if (memcmp(cmd_arr + cmp_offs, cmd_resp + cmp_offs, cmp_bytes)) {
+            dbg("%d bytes of response mismatch the command", cmp_bytes);
+            goto next;
         }
 
+        break;
+
+      next:
         usleep(100 * 1000);
     }
     if (i > 0)
@@ -325,7 +328,6 @@ void event_loop_start()
 void event_loop_shutdown()
 {
     dbg("shutting down event loop");
-    el.stop = true;
     if (el.is_running) {
         dbg("killing existing event loop thread");
         pthread_kill(el.thread, SIGUSR1);
@@ -540,7 +542,7 @@ struct udev_device *scan_for_mxm(struct udev *udev)
 
 void sig_handler(int signum)
 {
-    dbg("signal %s catched", signum);
+    dbg("signal %d catched", signum);
 
     if (signum == SIGINT) {
         msg("Shutting down...");
