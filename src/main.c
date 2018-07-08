@@ -1,6 +1,5 @@
 /* TODO: create systemd file */
 /* TODO: remove debug compile options from makefile */
-/* TODO: make middleclick/modeshift switch and mappings optional */
 
 #include <libudev.h>
 #include <stdio.h>
@@ -24,17 +23,14 @@
 #define VID 0x046d
 #define PID 0xc52b
 
-#define X_BUTTON_FW_DOWN "xdotool keydown Hyper_L mousedown 1 keyup Hyper_L"
-#define X_CLEAR "xdotool keyup Hyper_L mouseup 1 mouseup 3"
-
 struct hid_event_loop {
     pthread_t thread;
     int fd;
     bool stop;
     bool is_running;
 
+    bool swap_middleclick;
     int modeshift;
-
     /* Command actions */
     const char *act_fw_down;
     const char *act_bk_down;
@@ -47,6 +43,7 @@ static char doc[] =
 
 enum cmd_args {
     MODESHIFT,
+    SWAP_MIDDLECLICK,
     FW_DOWN,
     BK_DOWN,
     THUMB_DOWN,
@@ -54,6 +51,7 @@ enum cmd_args {
 };
 static struct argp_option options[] = {
     { "modeshift", MODESHIFT, "level", 0, "Level of the mode shift trigger. Min=0, max=50, default=13", 0 },
+    { "swap-middleclick", SWAP_MIDDLECLICK, NULL, 0, "Swap middle click and mode shift buttons", 0 },
     { "fw-down", FW_DOWN, "command", 0, "Command to be executed on the fw button press", 0 },
     { "bk-down", BK_DOWN, "command", 0, "Command to be executed on the bk button press", 0 },
     { "thumb-down", THUMB_DOWN, "command", 0, "Command to be executed on the thumb button press", 0 },
@@ -73,6 +71,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
             argp_usage(state);
             return EINVAL;
         }
+        break;
+    case SWAP_MIDDLECLICK:
+        el.swap_middleclick = true;
         break;
     case FW_DOWN:
         el.act_fw_down = arg;
@@ -402,16 +403,24 @@ int setup_mxm(struct udev_device *dev_hidraw)
 
     /* Batch send all commands to MX Master
      */
-    if (!send_cmd(fd, cmd_thumb_event, ARR_SIZE(cmd_thumb_event)))
-        warn("failed to set up thumb events");
-    if (!send_cmd(fd, cmd_fw_event, ARR_SIZE(cmd_fw_event)))
-        warn("failed to set up forward events");
-    if (!send_cmd(fd, cmd_bk_event, ARR_SIZE(cmd_bk_event)))
-        warn("failed to set up backward events");
-    if (!send_cmd(fd, cmd_wheel_modeshift, ARR_SIZE(cmd_wheel_modeshift)))
-        warn("failed to map scroll wheel to mode shift");
-    if (!send_cmd(fd, cmd_middlebutton_middleclick, ARR_SIZE(cmd_middlebutton_middleclick)))
-        warn("failed to map middle button to middle click");
+    if (el.act_thumb_down) {
+        if (!send_cmd(fd, cmd_thumb_event, ARR_SIZE(cmd_thumb_event)))
+            warn("failed to set up thumb events");
+    }
+    if (el.act_fw_down) {
+        if (!send_cmd(fd, cmd_fw_event, ARR_SIZE(cmd_fw_event)))
+            warn("failed to set up forward events");
+    }
+    if (el.act_bk_down) {
+        if (!send_cmd(fd, cmd_bk_event, ARR_SIZE(cmd_bk_event)))
+            warn("failed to set up backward events");
+    }
+    if (el.swap_middleclick) {
+        if (!send_cmd(fd, cmd_wheel_modeshift, ARR_SIZE(cmd_wheel_modeshift)))
+            warn("failed to map scroll wheel to mode shift");
+        if (!send_cmd(fd, cmd_middlebutton_middleclick, ARR_SIZE(cmd_middlebutton_middleclick)))
+            warn("failed to map middle button to middle click");
+    }
     if (!send_cmd(fd, cmd_modeshift_threshold, ARR_SIZE(cmd_modeshift_threshold)))
         warn("failed to set up mode shift threshold level");
 
@@ -579,11 +588,12 @@ int main (int argc, char *argv[])
         return 1;
 
     msg("Running with parameters:");
+    msg("  modeshift %d", el.modeshift);
+    msg("  swap-middleclick %d", el.swap_middleclick);
     msg("  fw-down: %s", el.act_fw_down);
     msg("  bk-down: %s", el.act_bk_down);
     msg("  thumb-down: %s", el.act_thumb_down);
     msg("  all-up: %s", el.act_all_up);
-    msg("  modeshift %d", el.modeshift);
 
     /* Signals:
      * INT  - properly terminate application
