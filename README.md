@@ -60,7 +60,7 @@ Project is organized with CMake, so to build it via shadow build:
 
 Just run manually MXControl from root (needed for hidraw read/write):
 
-> # ./mxcontrol
+> \# ./mxcontrol
 
 **Note:** for mxcontrol to handle all button events this application should be
 running constantly.
