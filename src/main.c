@@ -26,7 +26,6 @@ struct hid_event_loop {
     pthread_t thread;
     int fd;
     bool stop;
-    bool is_running;
 
     bool swap_middleclick;
     int modeshift;
@@ -253,7 +252,6 @@ void *event_loop(void *arg)
         return NULL;
     }
 
-    el.is_running = true;
     el.stop = false;
 
     /* Expected interrupt from button press events */
@@ -279,7 +277,7 @@ void *event_loop(void *arg)
         len = read(el.fd, buf, ARR_SIZE(buf));
         if (len < 0) {
             if (errno == EINTR) {
-                dbg("caught interrupt. Leaving event loop");
+                dbg("caught interrupt. Leaving the event loop");
                 break;
             }
             warn("can't read HID message: %s", strerror(errno));
@@ -313,8 +311,6 @@ void *event_loop(void *arg)
     close(el.fd);
     el.fd = -1;
 
-    el.is_running = false;
-
     dbg("event loop shut down");
 
     return NULL;
@@ -323,17 +319,19 @@ void *event_loop(void *arg)
 void event_loop_start()
 {
     dbg("starting event loop thread");
-    pthread_create(&el.thread, NULL, &event_loop, NULL);
+    if (pthread_create(&el.thread, NULL, &event_loop, NULL))
+        err("failed to start event loop thread: %s", strerror(errno));
 }
 
 void event_loop_shutdown()
 {
     dbg("shutting down event loop");
     el.stop = true;
-    if (el.is_running) {
+    if (el.thread) {
         dbg("killing existing event loop thread");
         pthread_kill(el.thread, SIGUSR1);
         pthread_join(el.thread, NULL);
+        el.thread = 0;
         dbg("thread killed");
     }
 }
@@ -348,8 +346,7 @@ int setup_mxm(struct udev_device *dev_hidraw)
     devnode = udev_device_get_devnode(dev_hidraw);
     msg("Performing setup on '%s'", devnode);
 
-    if (el.is_running)
-        event_loop_shutdown();
+    event_loop_shutdown();
 
     fd = open(devnode, O_RDWR);
     if (fd < 0) {
@@ -403,25 +400,19 @@ int setup_mxm(struct udev_device *dev_hidraw)
     /* Batch send all commands to MX Master
      */
     if (el.act_thumb_down) {
-        if (!send_cmd(fd, cmd_thumb_event, ARR_SIZE(cmd_thumb_event)))
-            warn("failed to set up thumb events");
+        send_cmd(fd, cmd_thumb_event, ARR_SIZE(cmd_thumb_event));
     }
     if (el.act_fw_down) {
-        if (!send_cmd(fd, cmd_fw_event, ARR_SIZE(cmd_fw_event)))
-            warn("failed to set up forward events");
+        send_cmd(fd, cmd_fw_event, ARR_SIZE(cmd_fw_event));
     }
     if (el.act_bk_down) {
-        if (!send_cmd(fd, cmd_bk_event, ARR_SIZE(cmd_bk_event)))
-            warn("failed to set up backward events");
+        send_cmd(fd, cmd_bk_event, ARR_SIZE(cmd_bk_event));
     }
     if (el.swap_middleclick) {
-        if (!send_cmd(fd, cmd_wheel_modeshift, ARR_SIZE(cmd_wheel_modeshift)))
-            warn("failed to map scroll wheel to mode shift");
-        if (!send_cmd(fd, cmd_middlebutton_middleclick, ARR_SIZE(cmd_middlebutton_middleclick)))
-            warn("failed to map middle button to middle click");
+        send_cmd(fd, cmd_wheel_modeshift, ARR_SIZE(cmd_wheel_modeshift));
+        send_cmd(fd, cmd_middlebutton_middleclick, ARR_SIZE(cmd_middlebutton_middleclick));
     }
-    if (!send_cmd(fd, cmd_modeshift_threshold, ARR_SIZE(cmd_modeshift_threshold)))
-        warn("failed to set up mode shift threshold level");
+    send_cmd(fd, cmd_modeshift_threshold, ARR_SIZE(cmd_modeshift_threshold));
 
     event_loop_start();
 
@@ -587,8 +578,8 @@ int main (int argc, char *argv[])
         return 1;
 
     msg("Running with parameters:");
-    msg("  modeshift %d", el.modeshift);
-    msg("  swap-middleclick %d", el.swap_middleclick);
+    msg("  modeshift: %d", el.modeshift);
+    msg("  swap-middleclick: %d", el.swap_middleclick);
     msg("  fw-down: %s", el.act_fw_down);
     msg("  bk-down: %s", el.act_bk_down);
     msg("  thumb-down: %s", el.act_thumb_down);
