@@ -13,5 +13,6 @@ set(SOURCES_DIR "${CMAKE_SOURCE_DIR}/src")
 
 # Set compile parameters
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -pedantic")
+# set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -DDEBUG")
 
 add_subdirectory(${SOURCES_DIR})

@@ -1,5 +1,4 @@
 /* TODO: create systemd file */
-/* TODO: remove debug compile options from makefile */
 
 #include <libudev.h>
 #include <stdio.h>
