@@ -52,9 +52,9 @@ kernel to support it.
 
 Project is organized with CMake, so to build it via shadow build:
 
-> $ mkdir build
-> $ cmake <mxcontrol_sources_dir>
-> $ make
+> $ mkdir build <br/>
+> $ cmake <mxcontrol_sources_dir> <br/>
+> $ make <br/>
 
 ## Running
 
@@ -73,11 +73,11 @@ create file /etc/systemd/system/mxcontrol.service with the following contents:
 > <br/>
 > [Service] <br/>
 > Type=simple <br/>
-> ExecStart=<path_to_binary> <br/>
+> ExecStart=\<path_to_binary\> <br/>
 > <br/>
 > [Install] <br/>
 > WantedBy=multi-user.target
 
 And then start the service with:
 
-> # systemctl start mxcontrol.service
+> \# systemctl start mxcontrol.service
