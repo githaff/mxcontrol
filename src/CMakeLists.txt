@@ -1,13 +1,15 @@
-cmake_minimum_required (VERSION 2.8)
-project (mxcontrol)
-
-# Set compile parameters
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -Wall -Wextra -pedantic")
-
-set (SOURCES
+set(SOURCES
   main.c
   aux.c)
-set (HEADERS
+set(HEADERS
   aux.h)
 
+find_package(libudev)
+find_package(Threads)
+
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+include_directories(
+  ${LIBUDEV_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME}
+  ${LIBUDEV_LIBRARY}
+  ${CMAKE_THREAD_LIBS_INIT})

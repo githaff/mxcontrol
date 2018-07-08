@@ -1,5 +1,6 @@
 /* TODO: create systemd file */
 /* TODO: remove debug compile options from makefile */
+/* TODO: apply BSD license */
 
 #include <libudev.h>
 #include <stdio.h>
