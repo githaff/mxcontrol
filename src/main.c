@@ -1,6 +1,6 @@
 /* TODO: create systemd file */
 /* TODO: remove debug compile options from makefile */
-/* TODO: apply BSD license */
+/* TODO: make middleclick/modeshift switch and mappings optional */
 
 #include <libudev.h>
 #include <stdio.h>
