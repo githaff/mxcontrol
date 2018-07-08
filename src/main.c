@@ -1,5 +1,3 @@
-/* TODO: create systemd file */
-
 #include <libudev.h>
 #include <stdio.h>
 #include <stdlib.h>

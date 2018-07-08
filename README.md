@@ -65,19 +65,22 @@ Just run manually MXControl from root (needed for hidraw read/write):
 **Note:** for mxcontrol to handle all button events this application should be
 running constantly.
 
-So for the sake of convenience it can be installed via systemd service. For that
-create file /etc/systemd/system/mxcontrol.service with the following contents:
+So for the sake of convenience it can be installed via user systemd service. For
+that you need to:
 
-> [Unit] <br/>
-> Description=MX Master control service <br/>
-> <br/>
-> [Service] <br/>
-> Type=simple <br/>
-> ExecStart=\<path_to_binary\> <br/>
-> <br/>
-> [Install] <br/>
-> WantedBy=multi-user.target
+* make udev rule to give your user read/write permissions to any logitech hidraw
+devices:
 
-And then start the service with:
+> \# cp udev/10-logitech-hidraw-permissions.rules /etc/udev/rules.d
 
-> \# systemctl start mxcontrol.service
+* create user systemd service for running mxcontrol with required paramteres.
+Example can be installed from the sources with:
+
+> $ systemd/mxcontrol.service ~/.config/systemd/user
+
+* create file /etc/systemd/system/mxcontrol.service with the following
+contents:
+
+* run the service with
+
+> $ systemctl --user start mxcontrol.service

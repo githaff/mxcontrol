@@ -1,6 +1,5 @@
 ### Executable
 mxcontrol
-udev
 *.o
 
 ### CMake
