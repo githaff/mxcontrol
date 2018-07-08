@@ -68,14 +68,14 @@ running constantly.
 So for the sake of convenience it can be installed via systemd service. For that
 create file /etc/systemd/system/mxcontrol.service with the following contents:
 
-> [Unit]
-> Description=MX Master control service
->
-> [Service]
-> Type=simple
-> ExecStart=<path_to_binary>
->
-> [Install]
+> [Unit] <br/>
+> Description=MX Master control service <br/>
+> <br/>
+> [Service] <br/>
+> Type=simple <br/>
+> ExecStart=<path_to_binary> <br/>
+> <br/>
+> [Install] <br/>
 > WantedBy=multi-user.target
 
 And then start the service with:
