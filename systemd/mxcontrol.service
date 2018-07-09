@@ -4,7 +4,7 @@ Description=MX Master control service
 [Service]
 Type=simple
 Environment="DISPLAY=:0"
-ExecStart=/home/%u/.bin/mxcontrol --fw-down="xdotool keydown Hyper_L mousedown 1 keyup Hyper_L" --bk-down="xdotool keydown Hyper_L mousedown 3 keyup Hyper_L" --thumb-down="xdotool keydown Hyper_L" --all-up="xdotool keyup Hyper_L mouseup 1 mouseup 3" --swap-middleclick
+ExecStart=/home/%u/.bin/mxcontrol --fw-down="/home/%u/.bin/win/fw-down.sh" --bk-down="/home/%u/.bin/win/bk-down.sh" --thumb-down="/home/%u/.bin/win/thumb-down.sh" --all-up="/home/%u/.bin/win/all-up.sh" --swap-middleclick
 
 [Install]
 WantedBy=multi-user.target
