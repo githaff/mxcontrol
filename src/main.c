@@ -168,20 +168,10 @@ bool is_mxm_ps(struct udev_device *dev)
     if (!dev_usb)
         return false;
 
-    const char *vid_str = udev_device_get_sysattr_value(dev_usb, "idVendor");
-    const char *pid_str = udev_device_get_sysattr_value(dev_usb, "idProduct");
-    if (!vid_str || !pid_str)
+    const char *model_name_str = udev_device_get_sysattr_value(dev, "model_name");
+    if (!model_name_str)
         goto exit;
-
-    char *endptr;
-    uint16_t vid = strtol(vid_str, &endptr, 16);
-    if (*endptr)
-        goto exit;
-    uint16_t pid = strtol(pid_str, &endptr, 16);
-    if (*endptr)
-        goto exit;
-
-    if (vid != VID || pid != PID)
+    if (strcmp(model_name_str, "Wireless Mouse MX Master"))
         goto exit;
 
     return true;
